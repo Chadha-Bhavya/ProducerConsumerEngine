@@ -10,6 +10,8 @@ public:
     int getPriority() const;
     std::chrono::steady_clock::time_point getCreationTime() const;
     void age(); // Increases priority to prevent starvation
+    int getEffectivePriority() const;
+
 
 private:
     int id_;
