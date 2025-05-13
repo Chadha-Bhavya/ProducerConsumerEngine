@@ -3,26 +3,58 @@
 #include "Consumer.hpp"
 #include "Logger.hpp"
 
+#include <unistd.h>      // for getopt
+#include <cstdlib>       // for std::atoi
 #include <thread>
 #include <vector>
 #include <mutex>
 #include <atomic>
 #include <chrono>
 
-int main() {
-    const int numProducers   = 2;
-    const int numConsumers   = 3;
-    const int maxQueueSize   = 10;
-    const int maxPriority    = 5;
-    const auto runDuration   = std::chrono::seconds(20);
+void printUsage(const char* prog) {
+    std::cout << "Usage: " << prog << " [-p producers] [-c consumers] "
+              << "[-q queue_size] [-r run_seconds] [-m max_priority]\n"
+              << "Defaults: p=2, c=3, q=10, r=20, m=5\n";
+}
+
+int main(int argc, char* argv[]) {
+    // Default parameters
+    int numProducers = 2;
+    int numConsumers = 3;
+    int maxQueueSize = 10;
+    int maxPriority  = 5;
+    int runSeconds   = 20;
+
+    // Parse CLI flags
+    int opt;
+    while ((opt = getopt(argc, argv, "p:c:q:r:m:h")) != -1) {
+        switch (opt) {
+            case 'p': numProducers = std::atoi(optarg); break;
+            case 'c': numConsumers = std::atoi(optarg); break;
+            case 'q': maxQueueSize = std::atoi(optarg); break;
+            case 'r': runSeconds   = std::atoi(optarg); break;
+            case 'm': maxPriority  = std::atoi(optarg); break;
+            case 'h':
+            default:
+                printUsage(argv[0]);
+                return opt == 'h' ? 0 : 1;
+        }
+    }
+
+    Logger::log("[Config] Producers=" + std::to_string(numProducers) +
+                " Consumers=" + std::to_string(numConsumers) +
+                " QueueSize=" + std::to_string(maxQueueSize) +
+                " Run=" + std::to_string(runSeconds) + "s" +
+                " MaxPrio=" + std::to_string(maxPriority));
 
     TaskQueue queue(maxQueueSize);
     int globalTaskId = 0;
     std::mutex idMutex;
     std::atomic<bool> running{true};
+
     std::vector<std::thread> threads;
 
-    // Producers
+    // Start producers
     for (int i = 0; i < numProducers; ++i) {
         threads.emplace_back(
             producerThread,
@@ -35,7 +67,7 @@ int main() {
         );
     }
 
-    // Consumers
+    // Start consumers
     for (int i = 0; i < numConsumers; ++i) {
         threads.emplace_back(
             consumerThread,
@@ -54,12 +86,13 @@ int main() {
         }
     });
 
-    // Run, then signal shutdown
-    std::this_thread::sleep_for(runDuration);
+    // Run for specified duration
+    std::this_thread::sleep_for(std::chrono::seconds(runSeconds));
+
+    // Shutdown
     running.store(false);
     queue.notifyAll();
 
-    // Join
     for (auto &t : threads) if (t.joinable()) t.join();
     if (monitor.joinable()) monitor.join();
 
