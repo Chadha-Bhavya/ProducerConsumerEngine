@@ -1,8 +1,9 @@
 #include "Consumer.hpp"
 #include "TaskQueue.hpp"
+#include "Logger.hpp"
+
 #include <thread>
 #include <chrono>
-#include <iostream>
 
 void consumerThread(TaskQueue& queue,
                     int consumerId,
@@ -10,9 +11,10 @@ void consumerThread(TaskQueue& queue,
 {
     while (running.load() || !queue.empty()) {
         Task task = queue.pop();
-        std::cout << "[Consumer " << consumerId 
-                  << "] Processing Task " << task.getId() 
-                  << "\n";
+        Logger::log(
+            "[Consumer " + std::to_string(consumerId) +
+            "] Processing Task " + std::to_string(task.getId())
+        );
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 }

@@ -1,29 +1,28 @@
 #include "TaskQueue.hpp"
 #include "Producer.hpp"
 #include "Consumer.hpp"
+#include "Logger.hpp"
 
 #include <thread>
 #include <vector>
 #include <mutex>
 #include <atomic>
 #include <chrono>
-#include <iostream>
 
 int main() {
-    const int numProducers = 2;
-    const int numConsumers = 3;
-    const int maxQueueSize = 10;
-    const int maxPriority = 5;
-    const auto runDuration = std::chrono::seconds(20);  // run for 20s
+    const int numProducers   = 2;
+    const int numConsumers   = 3;
+    const int maxQueueSize   = 10;
+    const int maxPriority    = 5;
+    const auto runDuration   = std::chrono::seconds(20);
 
     TaskQueue queue(maxQueueSize);
     int globalTaskId = 0;
     std::mutex idMutex;
     std::atomic<bool> running{true};
-
     std::vector<std::thread> threads;
 
-    // Start producer threads
+    // Producers
     for (int i = 0; i < numProducers; ++i) {
         threads.emplace_back(
             producerThread,
@@ -36,7 +35,7 @@ int main() {
         );
     }
 
-    // Start consumer threads
+    // Consumers
     for (int i = 0; i < numConsumers; ++i) {
         threads.emplace_back(
             consumerThread,
@@ -46,30 +45,24 @@ int main() {
         );
     }
 
-    // Monitor thread: ages every task once per second
+    // Monitor thread
     std::thread monitor([&]() {
         while (running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             queue.ageAll();
-            std::cout << "[Monitor] aged all tasks\n";
+            Logger::log("[Monitor] Aged all tasks");
         }
     });
 
-    // Let the simulation run...
+    // Run, then signal shutdown
     std::this_thread::sleep_for(runDuration);
-
-    // Begin shutdown
     running.store(false);
-    queue.notifyAll();   // wake any waiting push/pop
+    queue.notifyAll();
 
-    // Join all threads
-    for (auto& t : threads) {
-        if (t.joinable()) t.join();
-    }
-    if (monitor.joinable()) {
-        monitor.join();
-    }
+    // Join
+    for (auto &t : threads) if (t.joinable()) t.join();
+    if (monitor.joinable()) monitor.join();
 
-    std::cout << "Simulation ended cleanly.\n";
+    Logger::log("Simulation ended cleanly.");
     return 0;
 }
