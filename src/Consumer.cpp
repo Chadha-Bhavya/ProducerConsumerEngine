@@ -1,6 +1,7 @@
 #include "Consumer.hpp"
 #include "TaskQueue.hpp"
 #include "Logger.hpp"
+#include "Affinity.hpp"
 
 #include <thread>
 #include <chrono>
@@ -9,6 +10,10 @@ void consumerThread(TaskQueue& queue,
                     int consumerId,
                     std::atomic<bool>& running) 
 {
+    if (affinityEnabled.load()) {
+        bindThreadToCore(consumerId);
+    }
+
     while (running.load() || !queue.empty()) {
         Task task = queue.pop();
         Logger::log(

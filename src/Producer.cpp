@@ -2,6 +2,7 @@
 #include "Task.hpp"
 #include "TaskQueue.hpp"
 #include "Logger.hpp"
+#include "Affinity.hpp"
 
 #include <chrono>
 #include <thread>
@@ -14,6 +15,10 @@ void producerThread(TaskQueue& queue,
                     int maxPriority,
                     std::atomic<bool>& running) 
 {
+    if (affinityEnabled.load()) {
+        bindThreadToCore(producerId);
+    }
+
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> sleepDist(100, 300);
@@ -31,7 +36,7 @@ void producerThread(TaskQueue& queue,
         Task task(taskId, prioDist(gen));
         queue.push(std::move(task));
         Logger::log(
-            "[Producer " + std::to_string(producerId) +
+            "[Producer " + std::to_string(producerId) + 
             "] Created Task " + std::to_string(taskId) +
             " (prio=" + std::to_string(task.getPriority()) + ")"
         );

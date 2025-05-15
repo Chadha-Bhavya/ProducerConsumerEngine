@@ -2,83 +2,82 @@
 #include "Producer.hpp"
 #include "Consumer.hpp"
 #include "Logger.hpp"
+#include "Affinity.hpp"
+#include "Deadlock.hpp"
 
-#include <unistd.h>      // for getopt
-#include <cstdlib>       // for std::atoi
+#include <unistd.h>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <iostream>
 
 void printUsage(const char* prog) {
-    std::cout << "Usage: " << prog << " [-p producers] [-c consumers] "
-              << "[-q queue_size] [-r run_seconds] [-m max_priority]\n"
-              << "Defaults: p=2, c=3, q=10, r=20, m=5\n";
+    std::cout << "Usage: " << prog << " [-p producers] [-c consumers] [-q queue_size] "
+              << "[-r run_seconds] [-m max_priority] [-A] [-D] [-h]\n"
+              << "  -A  enable thread affinity\n"
+              << "  -D  simulate deadlock demo\n";
 }
 
 int main(int argc, char* argv[]) {
-    // Default parameters
-    int numProducers = 2;
-    int numConsumers = 3;
-    int maxQueueSize = 10;
-    int maxPriority  = 5;
-    int runSeconds   = 20;
+    int numProducers = 2, numConsumers = 3, maxQueueSize = 10;
+    int maxPriority = 5, runSeconds = 20;
+    bool enableDeadlock = false;
 
-    // Parse CLI flags
     int opt;
-    while ((opt = getopt(argc, argv, "p:c:q:r:m:h")) != -1) {
+    while ((opt = getopt(argc, argv, "p:c:q:r:m:ADh")) != -1) {
         switch (opt) {
             case 'p': numProducers = std::atoi(optarg); break;
             case 'c': numConsumers = std::atoi(optarg); break;
             case 'q': maxQueueSize = std::atoi(optarg); break;
             case 'r': runSeconds   = std::atoi(optarg); break;
             case 'm': maxPriority  = std::atoi(optarg); break;
+            case 'A': affinityEnabled.store(true); break;
+            case 'D': enableDeadlock = true; break;
             case 'h':
-            default:
-                printUsage(argv[0]);
-                return opt == 'h' ? 0 : 1;
+            default: printUsage(argv[0]); return opt=='h'?0:1;
         }
     }
 
-    Logger::log("[Config] Producers=" + std::to_string(numProducers) +
-                " Consumers=" + std::to_string(numConsumers) +
-                " QueueSize=" + std::to_string(maxQueueSize) +
-                " Run=" + std::to_string(runSeconds) + "s" +
-                " MaxPrio=" + std::to_string(maxPriority));
+    Logger::log("[Config] p=" + std::to_string(numProducers)
+                + " c=" + std::to_string(numConsumers)
+                + " q=" + std::to_string(maxQueueSize)
+                + " r=" + std::to_string(runSeconds)
+                + " m=" + std::to_string(maxPriority)
+                + (affinityEnabled?" Affinity ON":"")
+                + (enableDeadlock?" Deadlock ON":""));
 
     TaskQueue queue(maxQueueSize);
-    int globalTaskId = 0;
+    int globalId = 0;
     std::mutex idMutex;
     std::atomic<bool> running{true};
-
     std::vector<std::thread> threads;
 
-    // Start producers
-    for (int i = 0; i < numProducers; ++i) {
+    if (enableDeadlock) startDeadlockDemo(running);
+
+    // Producers
+    for (int i=0; i<numProducers; ++i)
         threads.emplace_back(
             producerThread,
-            std::ref(queue),
-            i,
-            std::ref(globalTaskId),
+            std::ref(queue), i,
+            std::ref(globalId),
             std::ref(idMutex),
             maxPriority,
             std::ref(running)
         );
-    }
 
-    // Start consumers
-    for (int i = 0; i < numConsumers; ++i) {
+    // Consumers
+    for (int i=0; i<numConsumers; ++i)
         threads.emplace_back(
             consumerThread,
-            std::ref(queue),
-            i,
+            std::ref(queue), i,
             std::ref(running)
         );
-    }
 
-    // Monitor thread
-    std::thread monitor([&]() {
+    // Monitor
+    std::thread monitor([&](){
         while (running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             queue.ageAll();
@@ -86,14 +85,11 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    // Run for specified duration
     std::this_thread::sleep_for(std::chrono::seconds(runSeconds));
-
-    // Shutdown
     running.store(false);
     queue.notifyAll();
 
-    for (auto &t : threads) if (t.joinable()) t.join();
+    for (auto &t: threads) if(t.joinable()) t.join();
     if (monitor.joinable()) monitor.join();
 
     Logger::log("Simulation ended cleanly.");
