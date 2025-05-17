@@ -41,4 +41,7 @@ void producerThread(TaskQueue& queue,
             " (prio=" + std::to_string(task.getPriority()) + ")"
         );
     }
+
+    Logger::log("[Producer " + std::to_string(producerId) + "] Stopped.");
+
 }

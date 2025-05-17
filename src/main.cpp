@@ -3,7 +3,6 @@
 #include "Consumer.hpp"
 #include "Logger.hpp"
 #include "Affinity.hpp"
-#include "Deadlock.hpp"
 
 #include <unistd.h>
 #include <cstdlib>
@@ -16,18 +15,16 @@
 
 void printUsage(const char* prog) {
     std::cout << "Usage: " << prog << " [-p producers] [-c consumers] [-q queue_size] "
-              << "[-r run_seconds] [-m max_priority] [-A] [-D] [-h]\n"
-              << "  -A  enable thread affinity\n"
-              << "  -D  simulate deadlock demo\n";
+              << "[-r run_seconds] [-m max_priority] [-A] [-h]\n"
+              << "  -A  enable thread affinity\n";
 }
 
 int main(int argc, char* argv[]) {
     int numProducers = 2, numConsumers = 3, maxQueueSize = 10;
     int maxPriority = 5, runSeconds = 20;
-    bool enableDeadlock = false;
 
     int opt;
-    while ((opt = getopt(argc, argv, "p:c:q:r:m:ADh")) != -1) {
+    while ((opt = getopt(argc, argv, "p:c:q:r:m:Ah")) != -1) {
         switch (opt) {
             case 'p': numProducers = std::atoi(optarg); break;
             case 'c': numConsumers = std::atoi(optarg); break;
@@ -35,7 +32,6 @@ int main(int argc, char* argv[]) {
             case 'r': runSeconds   = std::atoi(optarg); break;
             case 'm': maxPriority  = std::atoi(optarg); break;
             case 'A': affinityEnabled.store(true); break;
-            case 'D': enableDeadlock = true; break;
             case 'h':
             default: printUsage(argv[0]); return opt=='h'?0:1;
         }
@@ -46,8 +42,7 @@ int main(int argc, char* argv[]) {
                 + " q=" + std::to_string(maxQueueSize)
                 + " r=" + std::to_string(runSeconds)
                 + " m=" + std::to_string(maxPriority)
-                + (affinityEnabled?" Affinity ON":"")
-                + (enableDeadlock?" Deadlock ON":""));
+                + (affinityEnabled ? " Affinity ON" : ""));
 
     TaskQueue queue(maxQueueSize);
     int globalId = 0;
@@ -55,10 +50,8 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> running{true};
     std::vector<std::thread> threads;
 
-    if (enableDeadlock) startDeadlockDemo(running);
-
     // Producers
-    for (int i=0; i<numProducers; ++i)
+    for (int i = 0; i < numProducers; ++i)
         threads.emplace_back(
             producerThread,
             std::ref(queue), i,
@@ -69,7 +62,7 @@ int main(int argc, char* argv[]) {
         );
 
     // Consumers
-    for (int i=0; i<numConsumers; ++i)
+    for (int i = 0; i < numConsumers; ++i)
         threads.emplace_back(
             consumerThread,
             std::ref(queue), i,
@@ -77,7 +70,7 @@ int main(int argc, char* argv[]) {
         );
 
     // Monitor
-    std::thread monitor([&](){
+    std::thread monitor([&]() {
         while (running.load()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             queue.ageAll();
@@ -89,7 +82,7 @@ int main(int argc, char* argv[]) {
     running.store(false);
     queue.notifyAll();
 
-    for (auto &t: threads) if(t.joinable()) t.join();
+    for (auto& t : threads) if (t.joinable()) t.join();
     if (monitor.joinable()) monitor.join();
 
     Logger::log("Simulation ended cleanly.");
